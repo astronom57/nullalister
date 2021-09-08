@@ -66,8 +66,6 @@ def create_logger(obj=None, dest=['stderr'], levels=['INFO']):
     Returns:
         logging logger object
         
-    TODO: 
-        check if it actually works :)
     """
     
     # initialize a named logger    
@@ -79,6 +77,10 @@ def create_logger(obj=None, dest=['stderr'], levels=['INFO']):
             pass
     except:
         logger = logging.getLogger('')
+
+    # solve the issue of multiple handlers appearing unexpectedly
+    if (logger.hasHandlers()):
+        logger.handlers.clear()
 
     # match dimensions of dest and level
     if isinstance(dest, list):
@@ -220,6 +222,58 @@ class alist():
         
         return self.data
      
+    def select_telescopes(self, telescopes=[None]):
+        """Select only baselines with specified telescopes included. Telescope 
+        codes are given according to the fourfit codes. 
+        
+        Args:
+            telescopes: array of telescopes' one-letter fourfit codes
+            
+        Returns:
+            data with only specified telescopes included
+        """
+        if isinstance(telescopes, list):
+            pass
+        else:
+            telescopes = [telescopes]
+        
+        self.data = self.data.loc[(self.data.baseline.str[0].isin(telescopes)) | (self.data.baseline.str[1].isin(telescopes))]
+        
+        return self.data
+        
+    def select_baselines(self, baselines=[None]):
+        """Select specified baselines only. Telescope codes in the baselines
+        are given according to those used in fourfit. Baseline are failproof 
+        to the different order of stations, i.e. XY == YX. 
+        
+        Args:
+            baselines: array of two-letter baselines
+           
+        Returns:
+            data with only specified baselines
+        """
+        if isinstance(baselines, list):
+            pass
+        else:
+            baselines = [baselines]
+        
+        reversed_baselines = []
+        
+        for b in baselines:
+            reversed_baselines.append(b[::-1])
+        
+        baselines = baselines + reversed_baselines
+        
+        print(baselines)
+        
+        self.data = self.data.loc[self.data.baseline.isin(baselines)]
+        
+        
+        return self.data
+             
+         
+        
+     
     def drop_unused_columns(self, columns=None):
         """Drop unused columns. 
         Currently, will leave [exp, scan, source, baseline, u, v, freq]
@@ -291,7 +345,8 @@ class alist():
         return
     
     
-    def radplot_low_snr_fraction(self, bin_width=500, label=None, title=None, hardcopy=None):
+    def radplot_low_snr_fraction(self, bin_width=500, label=None, title=None, hardcopy=None,
+                                 uv_range=None):
         """Plot ratio of number of low snr points to total number of point in each bin
         of a certain width in uv distance.
         
@@ -307,15 +362,29 @@ class alist():
         snr_ratio.loc[:, 'ratio'] = snr_ratio.loc[:, 'snr_low'] / snr_ratio.loc[:, 'snr_all']
         snr_ratio.loc[:, 'mid'] = snr_ratio.index.categories.mid
         fig,ax = plt.subplots(1, 1)
+        if uv_range is not None:
+            ax.set_xlim(uv_range)
+
+        
         if label is not None:
-            ax.plot(snr_ratio.loc[:, 'mid'], snr_ratio.loc[:, 'ratio'], '*', label=label)
+            # ax.plot(snr_ratio.loc[:, 'mid'], snr_ratio.loc[:, 'ratio'], '-*', label=label)
+            ax2 = ax.twinx()
+            # ax2.plot(self.data.uvdist, self.data.snr, 'o', label='{}'.format(self.data.source.unique()))
+            if uv_range is not None:
+                ax2.plot(self.data.loc[self.data.uvdist > uv_range[0], 'uvdist'], 
+                         self.data.loc[self.data.uvdist > uv_range[0], 'snr'], 'o', 
+                         label='{}'.format(self.data.source.unique()))
+            
+            ax.bar(snr_ratio.loc[:, 'mid'], snr_ratio.loc[:, 'ratio'], width=bin_width, color='red', alpha=0.5, label=label)
             ax.legend()
         else:
-            ax.plot(snr_ratio.loc[:, 'mid'], snr_ratio.loc[:, 'ratio'], '*')
+            # ax.plot(snr_ratio.loc[:, 'mid'], snr_ratio.loc[:, 'ratio'], '-*')
+            ax.bar(snr_ratio.loc[:, 'mid'], snr_ratio.loc[:, 'ratio'], width=bin_width, color='red', alpha=0.5)
             
         ax.set_xlabel(r'UV distance (M$\lambda$)')
         ax.set_ylabel('Ratio of low SNR fringes')
-    
+            
+
         if title is not None:
             fig.suptitle(title)
     
@@ -327,7 +396,10 @@ class alist():
 if __name__ == "__main__":
 
 
-    alist_file = '/homes/mlisakov/sci/eht/5.alist.v6'
+    # alist_file = '/homes/mlisakov/sci/eht/5.alist.v6'
+    # alist_file = '/homes/mlisakov/correlation/ml005/alist_v6.out'
+    alist_file = '/homes/mlisakov/data/correlation/ml005/alist.out'
+    
 
     logger = create_logger(dest=['nullalister.log'])
     logger.info('\n============================================\nStart running version {} at {}'.format(__version__, dt.datetime.now()))
@@ -335,27 +407,57 @@ if __name__ == "__main__":
     logger.info("Found sources: {}".format(sgra.data.source.unique()))
     sgra.add_columns() # add datetime and uv distance
     sgra.drop_unused_columns() # remove unused columns
-    sgra.select_source('SGRA') # select specific source by name
+    sgra.select_source('M87') # select specific source by name
+    # sgra.select_source('SGRA') # select specific source by name
+    # sgra.select_source('3C273') # select specific source by name
+    # sgra.select_source('3C279') # select specific source by name
+    # sgra.select_source('0716+714') # select specific source by name
     sgra.remove_autocorr()  # remove autocorrelations since they are not analyzed
 
-    # sgra.radplot(uv_range = [100,9000], highlight_low_snr=True) # plot SNR(uv distance)
+
+    sgra.select_telescopes(['B', 'G', 'A', 'P'])      # select only baselines with specific telescopes included
+    # sgra.select_baselines(['BG'])      # select only specified baselines
+
+
+
     
     # some specific constraints can be put directly on the data here
-    sgra.data = sgra.data.loc[(sgra.data.pol == 'RR') | (sgra.data.pol == 'LL')] # select only parallels
+    # sgra.data = sgra.data.loc[(sgra.data.pol == 'RR') | (sgra.data.pol == 'LL')] # select only parallels
+    sgra.data = sgra.data.loc[(sgra.data.pol == 'RR') ] # select only parallels
+    # sgra.data = sgra.data.loc[(sgra.data.pol == 'RL') | (sgra.data.pol == 'LR')] # select only crosses
     # sgra.data = sgra.data.loc[(sgra.data.time > '2017-04-05 00:00:00') & 
     #                           (sgra.data.time < '2017-04-06 00:00:00')] # select specifit time range
 
-    sgra.snr_cutoff = 5
+    sgra.snr_cutoff = 6.4   # GMVA 2018 ML005
+    # sgra.snr_cutoff = 7   # EHT 2017 SGRA*
+    
+    
         
     
+    
+    
+    # plot SNR vs radial UV distance
+    # sgra.radplot(uv_range = [100,3300], highlight_low_snr=True) # plot SNR(uv distance)
+
     # plot the ratio of the number of low SNR fringes to the number of all fringes 
     # binned over uv distance
-    bin_width = 200 # in Mega lambda
-    snr_ratio_data = sgra.radplot_low_snr_fraction(bin_width = bin_width, label=r'RR and LL, bin width = {} M$\lambda$'.format(bin_width), 
-                                  title='SgrA* 2017, all days\nNumber of low SNR fringes (<{}) to all in the bin'.format(sgra.snr_cutoff),
-                                  hardcopy='nullalister.png')
+    bin_width = 50 # in Mega lambda
+    # snr_ratio_data = sgra.radplot_low_snr_fraction(bin_width = bin_width, label=r'RR and LL, bin width = {} M$\lambda$'.format(bin_width), 
+    #                               title='{} 2017,  all days\nNumber of low SNR fringes (<{}) to all in the bin'.format(sgra.data.source.unique(), sgra.snr_cutoff),
+    #                               hardcopy='nullalister.png',
+    #                               uv_range = [100,3300])
     
-    print("SNR ratio data\n{}".format(snr_ratio_data))
+
+
+
+    # M87 in ML005, 2018 with GMVA
+    snr_ratio_data = sgra.radplot_low_snr_fraction(bin_width = bin_width, label=r'RR and LL, bin width = {} M$\lambda$'.format(bin_width), 
+                                  title='{} ML005, 2018 with GMVA,  all days\nNumber of low SNR fringes (<{}) to all in the bin\nOnly baselines to GBT, EF, PV, ALMA'.format(sgra.data.source.unique(), sgra.snr_cutoff),
+                                  hardcopy='nullalister.png',
+                                  uv_range = [100,3300])
+
+    
+    # print("SNR ratio data\n{}".format(snr_ratio_data))
     
     logger.info('Finished run at {}'.format(dt.datetime.now()))
 
