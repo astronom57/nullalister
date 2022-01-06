@@ -365,7 +365,8 @@ class alist():
     
     
     def radplot_low_snr_fraction(self, bin_width=500, label=None, title=None, hardcopy=None,
-                                 uv_range=None, bins=None, ndata=None, plot_counts=False):
+                                 uv_range=None, bins=None, ndata=None, plot_counts=False,
+                                 min_num_fringes=0):
         """Plot ratio of number of low snr points to total number of point in each bin
         of a certain width in uv distance.
         
@@ -375,6 +376,9 @@ class alist():
             plot_counts (Bool):
                 print a number of low_snr_fringes (low_snr_fringes_4scale) over 
                 total_fringes (total_fringes_4scale) 
+            min_num_fringes (int):
+                plot only bin with this minimum total number of fringes
+
             
             
         """
@@ -444,7 +448,8 @@ class alist():
                          self.data.loc[self.data.uvdist > uv_range[0], 'snr'], 'o', 
                          label='{}'.format(self.data.source.unique()))
             
-            bars = ax.bar(snr_ratio.loc[:, 'mid'], snr_ratio.loc[:, 'ratio'], width=bin_width, color='red', alpha=0.5, label=label)
+            # bars = ax.bar(snr_ratio.loc[:, 'mid'], snr_ratio.loc[:, 'ratio'], width=bin_width, color='red', alpha=0.5, label=label)
+            bars = ax.bar(snr_ratio.loc[snr_ratio.snr_all >= min_num_fringes, 'mid'], snr_ratio.loc[snr_ratio.snr_all >= min_num_fringes, 'ratio'], width=bin_width, color='red', alpha=0.5, label=label) # introduced a min_num_fringes
             # labels_x = np.array([bars.patches[i].xy[0] for i in range(0,len(bars.patches))]) + np.array([bars.patches[i].get_width() / 2  for i in range(0,len(bars.patches))])
             # labels_y = np.array([bars.patches[i].xy[1] for i in range(0,len(bars.patches))]) + np.array([bars.patches[i].get_height() for i in range(0,len(bars.patches))])
             # # labels_text = 
@@ -665,7 +670,6 @@ def proceed_no_rings():
     adata.snr_cutoff = adata.data.snr[adata.data.snr< 7.0].mean() + 2*adata.data.snr[adata.data.snr< 7.0].std() 
     
     
-    
     bin_width = 200 # in Mega lambda
     snr_ratio_data = adata.radplot_low_snr_fraction(bin_width = bin_width, label=r'RR and LL, bin width = {} M$\lambda$'.format(bin_width), 
                                   title='{} 2021,  all days\nNumber of low SNR fringes (<{:.1f}) to all in the bin'.format(adata.data.source.unique(), adata.snr_cutoff),
@@ -687,7 +691,7 @@ def proceed_no_rings():
 
   
 def proceed_scale(alist_file=None, source=None, full=False, timerange=None, polar=['RR','LL'], date_str=None,
-                  plot_counts=False, bin_width=200):
+                  plot_counts=False, bin_width=200, min_num_fringes=0):
     """ Proceed .
     This should be the most accurate method. The difference is that now the ratios 
     of non-detection to detections per bin for the horizon sources (SGRA or M87) are multiplied 
@@ -716,6 +720,8 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
             total_fringes (total_fringes_4scale) 
         bin_width (float):
             bin width in mega-lambda
+        min_num_fringes (int):
+            plot only bin with this minimum total number of fringes
     """
     
     uv_range = [100,8200] # range of UV distances to consider. [100 cuts very sensitive baselines AA-AP
@@ -776,6 +782,15 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
     adata.snr_cutoff = adata.data.snr[adata.data.snr< 7.0].mean() + 2*adata.data.snr[adata.data.snr< 7.0].std() 
     ndata.snr_cutoff = ndata.data.snr[ndata.data.snr< 7.0].mean() + 2*ndata.data.snr[ndata.data.snr< 7.0].std() 
     
+    
+    logger.info('Total non-detection rate for {} is {} / {} = {:.2f}'.format(source, 
+                                                                             adata.data.loc[adata.data.snr < adata.snr_cutoff, 'snr'].count(),
+                                                                             adata.data.loc[:, 'snr'].count(),
+                                                                             adata.data.loc[adata.data.snr < adata.snr_cutoff, 'snr'].count()/adata.data.loc[:, 'snr'].count()
+                                                                             ))
+
+    
+    
     if full is True:
         
         
@@ -808,7 +823,8 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
                                       uv_range=uv_range,
                                       bins=bins,
                                       ndata=ndata,
-                                      plot_counts=plot_counts) 
+                                      plot_counts=plot_counts,
+                                      min_num_fringes=min_num_fringes) 
 
 
 
@@ -824,14 +840,14 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
 if __name__ == "__main__":
 
     if True:
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='M87', polar=['RR','LL'])
-        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2018/rev3/e18c21-3-b2.3644.alist', source='M87')
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2018/eht2018_jw_rev3.alist', source='M87', polar=['RR','LL'])
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2021/eht2021_jw_rev0.alist', source='M87', polar=['RR','LL'])
+        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='M87', polar=['RR','LL'])
+        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2018/eht2018_jw_rev3.alist', source='M87', polar=['RR','LL'])
+        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2021/eht2021_jw_rev0.alist', source='M87', polar=['RR','LL'])
         
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', polar=['RR','LL'])
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2018/eht2018_jw_rev3.alist', source='SGRA', polar=['RR','LL'])
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2021/eht2021_jw_rev0.alist', source='SGRA', polar=['RR','LL'])
+        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', polar=['RR','LL'], 
+                      plot_counts=True, min_num_fringes=5)
+        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2018/eht2018_jw_rev3.alist', source='SGRA', polar=['RR','LL'])
+        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2021/eht2021_jw_rev0.alist', source='SGRA', polar=['RR','LL'])
  
     if False:  # compare different pol products on 2017 Apr 5 and 6.
         proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
@@ -857,32 +873,32 @@ if __name__ == "__main__":
     #     # compare Apr 6th and other days in 2017. With scaling
         proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
                       timerange=[dt.datetime(2017,4,5,0,0,0),dt.datetime(2017,4,6,0,0,0)], polar=['RR', 'LL'],
-                      date_str = 'Apr 5, 2017', plot_counts=True)
+                      date_str = 'Apr 5, 2017', plot_counts=False)
         proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
                       timerange=[dt.datetime(2017,4,6,0,0,0),dt.datetime(2017,4,7,0,0,0)], polar=['RR', 'LL'],
-                      date_str = 'Apr 6, 2017', plot_counts=True)
-        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-        #               timerange=[dt.datetime(2017,4,7,0,0,0),dt.datetime(2017,4,8,0,0,0)], polar=['RR', 'LL'],
-        #               date_str = 'Apr 7, 2017')
-        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-        #               timerange=[dt.datetime(2017,4,10,0,0,0),dt.datetime(2017,4,11,0,0,0)], polar=['RR', 'LL'],
-        #               date_str = 'Apr 10, 2017')
+                      date_str = 'Apr 6, 2017', plot_counts=False)
+        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+                      timerange=[dt.datetime(2017,4,7,0,0,0),dt.datetime(2017,4,8,0,0,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 7, 2017')
+        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+                      timerange=[dt.datetime(2017,4,10,0,0,0),dt.datetime(2017,4,12,0,0,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 10-11, 2017')
         # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
         #               timerange=[dt.datetime(2017,4,11,0,0,0),dt.datetime(2017,4,12,0,0,0)], polar=['RR', 'LL'],
         #               date_str = 'Apr 11, 2017')
-        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-        #               timerange=[dt.datetime(2017,4,5,0,0,0),dt.datetime(2017,4,12,0,0,0)], polar=['RR', 'LL'],
-        #               date_str = 'Apr 5-11, 2017', bin_width=250)
+        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+                      timerange=[dt.datetime(2017,4,5,0,0,0),dt.datetime(2017,4,12,0,0,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 5-11, 2017')
     
     
     #     # compare Apr 6th and other days in 2017. Without scaling
     
-        proceed(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-                      timerange=[dt.datetime(2017,4,5,0,0,0),dt.datetime(2017,4,6,0,0,0)], polar=['RR', 'LL'],
-                      date_str = 'Apr 5, 2017', plot_counts=True)
-        proceed(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-                      timerange=[dt.datetime(2017,4,6,0,0,0),dt.datetime(2017,4,7,0,0,0)], polar=['RR', 'LL'],
-                      date_str = 'Apr 6, 2017', plot_counts=True)
+        # proceed(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+        #               timerange=[dt.datetime(2017,4,5,0,0,0),dt.datetime(2017,4,6,0,0,0)], polar=['RR', 'LL'],
+        #               date_str = 'Apr 5, 2017', plot_counts=True)
+        # proceed(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+        #               timerange=[dt.datetime(2017,4,6,0,0,0),dt.datetime(2017,4,7,0,0,0)], polar=['RR', 'LL'],
+        #               date_str = 'Apr 6, 2017', plot_counts=True)
         # proceed(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
         #               timerange=[dt.datetime(2017,4,7,0,0,0),dt.datetime(2017,4,8,0,0,0)], polar=['RR', 'LL'],
         #               date_str = 'Apr 7, 2017')
