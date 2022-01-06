@@ -50,6 +50,20 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 
+import platform  # to get computer name in order to avoid selecting computer name and paths by hand
+
+import warnings
+warnings.filterwarnings("ignore", category=FutureWarning) #
+    # FutureWarning: Support for multi-dimensional indexing (e.g. `obj[:, None]`) 
+    # is deprecated and will be removed in a future version.  Convert to a numpy 
+    # array before indexing instead. x = x[:, np.newaxis]
+
+
+warnings.filterwarnings("ignore", category=RuntimeWarning) 
+    # RuntimeWarning: invalid value encountered in less
+    # condition = (xf < v1) | (xf > v2)
+
+
 def create_logger(obj=None, dest=['stderr'], levels=['INFO']):
     """Creates a logger instance to write log information to STDERR.
     
@@ -260,6 +274,27 @@ class alist():
         
         return self.data
         
+      
+    def exclude_telescopes(self, telescopes=[None]):
+        """Exclude specified telescopes. Telescope 
+        codes are given according to the fourfit codes. 
+        
+        Args:
+            telescopes: array of telescopes' one-letter fourfit codes
+            
+        Returns:
+            data with specified telescopes excluded
+        """
+        if isinstance(telescopes, list):
+            pass
+        else:
+            telescopes = [telescopes]
+        
+        self.data = self.data.loc[(~self.data.baseline.str[0].isin(telescopes)) & (~self.data.baseline.str[1].isin(telescopes))]
+        
+        return self.data
+    
+        
     def select_baselines(self, baselines=[None]):
         """Select specified baselines only. Telescope codes in the baselines
         are given according to those used in fourfit. Baseline are failproof 
@@ -286,6 +321,37 @@ class alist():
         print(baselines)
         
         self.data = self.data.loc[self.data.baseline.isin(baselines)]
+        
+        
+        return self.data
+             
+         
+    def exclude_baselines(self, baselines=[None]):
+        """Exclude specified baselines. Telescope codes in the baselines
+        are given according to those used in fourfit. Baseline are failproof 
+        to the different order of stations, i.e. XY == YX. 
+        
+        Args:
+            baselines: array of two-letter baselines
+           
+        Returns:
+            data without specified baselines
+        """
+        if isinstance(baselines, list):
+            pass
+        else:
+            baselines = [baselines]
+        
+        reversed_baselines = []
+        
+        for b in baselines:
+            reversed_baselines.append(b[::-1])
+        
+        baselines = baselines + reversed_baselines
+        
+        print(baselines)
+        
+        self.data = self.data.loc[~self.data.baseline.isin(baselines)]
         
         
         return self.data
@@ -546,7 +612,11 @@ class alist():
     
     
 def proceed(alist_file=None, source=None, full=False, timerange=None, polar=['RR','LL'], date_str=None,
-            plot_counts=False, bin_width=200):
+            plot_counts=False, bin_width=200, 
+            exclude_telescopes=None, exclude_baselines=None,
+            select_telescopes=None, select_baselines=None,
+            no_rings=False,
+            min_num_fringes=0):
     """ Proceed .
     No scaling is applied. 
     
@@ -570,18 +640,25 @@ def proceed(alist_file=None, source=None, full=False, timerange=None, polar=['RR
             print a number of low_snr_fringes (low_snr_fringes_4scale) over 
             total_fringes (total_fringes_4scale)
         bin_width (float):
-            bin width in mega-lambda
+            bin width in mega-
+        exclude_telescopes ([str]):
+            exclude these telescopes data
+        exclude_baselines ([str]):
+            exclude specific baselines
+        select_telescopes ([str]):
+            select only these telescopes data
+        select_baselines ([str]):
+            select only these specific baselines
+        no_rings (Bool):
+            exclude ring sources (SgrA* and M87)
+        min_num_fringes (int):
+            plot only bin with this minimum total number of fringes
+
     """
     
-    # alist_file = '/homes/mlisakov/data/correlation/ehtALL/ehtALL.alist'
-    # alist_file = '/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist'
-    # alist_file = '/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev7.alist'
+    uv_range = [100,8200] # range of UV distances to consider. [100 cuts very sensitive baselines AA-AP
     
-    # alist_file = '/homes/mlisakov/data/correlation/eht2018/eht2018_jw_rev3.alist'
-    # alist_file = '/homes/mlisakov/data/correlation/eht2018/rev3/e18c21-3-b2.3644.alist'
-    # alist_file = '/homes/mlisakov/data/correlation/eht2018/e18c21.alist'
     
-    # alist_file = '/homes/mlisakov/data/correlation/eht2021/eht2021_jw_rev0.alist'
     if alist_file is None:
         alist_file = '/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist'
     
@@ -593,11 +670,38 @@ def proceed(alist_file=None, source=None, full=False, timerange=None, polar=['RR
     adata.add_columns() # add datetime and uv distance
     adata.drop_unused_columns() # remove unused columns
     
+    
+    # calculate bins to have them the same between horizon and non-horizon sources
+    # Placing binning here helps to really use the full UV-range. After excluding telescopes/baselines,
+    # pandas can not use the specified range, only what is left
+    _, bins = pd.cut(adata.data.uvdist.values, bins=np.int((uv_range[1] - uv_range[0]) / bin_width), retbins=True)
+    logger.debug('Made {} bins:\n{}'.format(len(bins), bins))
+    
+
+    
     if timerange is not None:
         adata.data = adata.data.loc[(adata.data.time >= timerange[0]) & (adata.data.time <= timerange[1])]
 
+    if exclude_telescopes is not None:
+        adata.exclude_telescopes(exclude_telescopes)
 
-    adata.select_source([source]) # select specific source by name
+    if exclude_baselines is not None:
+        adata.exclude_baselines(exclude_baselines)
+
+    if select_telescopes is not None:
+        adata.select_telescopes(select_telescopes)
+
+    if select_baselines is not None:
+        adata.select_baselines(select_baselines)
+
+    if source is not None:
+        adata.select_source([source]) # select specific source by name
+    
+    if no_rings is True:
+        adata.exclude_rings()   # all sources except M87 and SGRA. This will give a baseline for the level lof non-detections
+
+        
+        
     adata.remove_autocorr()  # remove autocorrelations since they are not analyzed
     adata.data = adata.data.loc[adata.data.pol.isin(polar)] # select polarizations 
     
@@ -609,21 +713,23 @@ def proceed(alist_file=None, source=None, full=False, timerange=None, polar=['RR
     adata.snr_cutoff = adata.data.snr[adata.data.snr< 7.0].mean() + 2*adata.data.snr[adata.data.snr< 7.0].std() 
     
     
+    logger.info('{} non-det rate: {:.0f}% . Total number = {}, Non-detections = {}'.format(source, 
+                             adata.data.loc[adata.data.snr < adata.snr_cutoff, 'snr'].count() / adata.data.loc[:, 'snr'].count() * 100,
+                             adata.data.loc[:, 'snr'].count(),
+                             adata.data.loc[adata.data.snr < adata.snr_cutoff, 'snr'].count()) )
+
+    
     
     snr_ratio_data = adata.radplot_low_snr_fraction(bin_width = bin_width, label=r'{}, bin width = {} M$\lambda$'.format(polar, bin_width), 
                                   title='{}, {}, {}\nNumber of low SNR fringes (<{:.1f}) to all in the bin'.format(adata.data.source.unique(), 
                                                                                                                          '' if date_str is None else date_str, 
                                                                                                                          polar, adata.snr_cutoff),
                                   hardcopy='nullalister_snr.png',
-                                  uv_range = [100,8200],
-                                  plot_counts=plot_counts)
+                                  uv_range = uv_range,
+                                  plot_counts=plot_counts,
+                                  bins=bins,
+                                  min_num_fringes=min_num_fringes)
     
-    # the same but based on the fringe quality data. Proven to be consistent with the SNR-based estimates 
-    # qe_cutoff = 3
-    # qe_ratio_data = adata.radplot_low_qe_fraction(bin_width = bin_width, qe_cutoff=qe_cutoff, label=r'RR and LL, bin width = {} M$\lambda$'.format(bin_width), 
-    #                               title='{} 2021,  all days\nNumber of low QE fringes (<={}) to all in the bin'.format(adata.data.source.unique(), qe_cutoff),
-    #                               hardcopy='nullalister_qe.png',
-    #                               uv_range = [100,8200])
     
     logger.info('Finished run at {}'.format(dt.datetime.now()))
     
@@ -691,7 +797,10 @@ def proceed_no_rings():
 
   
 def proceed_scale(alist_file=None, source=None, full=False, timerange=None, polar=['RR','LL'], date_str=None,
-                  plot_counts=False, bin_width=200, min_num_fringes=0):
+                  plot_counts=False, bin_width=200, 
+                  exclude_telescopes=None, exclude_baselines=None,
+                  select_telescopes=None, select_baselines=None,
+                  min_num_fringes=0):
     """ Proceed .
     This should be the most accurate method. The difference is that now the ratios 
     of non-detection to detections per bin for the horizon sources (SGRA or M87) are multiplied 
@@ -720,6 +829,14 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
             total_fringes (total_fringes_4scale) 
         bin_width (float):
             bin width in mega-lambda
+        exclude_telescopes ([str]):
+            exclude these telescopes data
+        exclude_baselines ([str]):
+            exclude specific baselines
+        select_telescopes ([str]):
+            select only these telescopes data
+        select_baselines ([str]):
+            select only these specific baselines
         min_num_fringes (int):
             plot only bin with this minimum total number of fringes
     """
@@ -757,10 +874,36 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
     adata.drop_unused_columns() # remove unused columns
     ndata.drop_unused_columns() # remove unused columns
     
+    # calculate bins to have them the same between horizon and non-horizon sources
+    # Placing binning here helps to really use the full UV-range. After excluding telescopes/baselines,
+    # pandas can not use the specified range, only what is left
+    _, bins = pd.cut(adata.data.uvdist.values, bins=np.int((uv_range[1] - uv_range[0]) / bin_width), retbins=True)
+    logger.debug('Made {} bins:\n{}'.format(len(bins), bins))
+    
+    
+    
     if timerange is not None:   # limit timerange if required.
         adata.data = adata.data.loc[(adata.data.time >= timerange[0]) & (adata.data.time <= timerange[1])]
         ndata.data = ndata.data.loc[(ndata.data.time >= timerange[0]) & (ndata.data.time <= timerange[1])]
         
+    if exclude_telescopes is not None:
+        adata.exclude_telescopes(exclude_telescopes)
+        ndata.exclude_telescopes(exclude_telescopes)
+
+    if exclude_baselines is not None:
+        adata.exclude_baselines(exclude_baselines)
+        ndata.exclude_baselines(exclude_baselines)
+
+    if select_telescopes is not None:
+        adata.select_telescopes(select_telescopes)
+        ndata.select_telescopes(select_telescopes)
+
+    if select_baselines is not None:
+        adata.select_baselines(select_baselines)
+        ndata.select_baselines(select_baselines)
+
+    # TODO: check that some data are actually left        
+
     # source selection
     adata.select_source([source]) # select specific source by name
     ndata.exclude_rings()   # all sources except M87 and SGRA. This will give a baseline for the level lof non-detections
@@ -774,22 +917,20 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
     ndata.data = ndata.data.loc[ndata.data.pol.isin(polar)] # select polarizations 
     
     
-    # calculate bins to have them the same between horizon and non-horizon sources
-    _, bins = pd.cut(adata.data.uvdist.values, bins=np.int((uv_range[1] - uv_range[0]) / bin_width), retbins=True)
     
     
     # calculate snr cutoff as mean + 2 std for all fringes with snr < 7.0
     adata.snr_cutoff = adata.data.snr[adata.data.snr< 7.0].mean() + 2*adata.data.snr[adata.data.snr< 7.0].std() 
     ndata.snr_cutoff = ndata.data.snr[ndata.data.snr< 7.0].mean() + 2*ndata.data.snr[ndata.data.snr< 7.0].std() 
+    # TODO: Iterative procedure of getting the correct and stable SNR cutoff. Test later
+    # adata.snr_cutoff = adata.data.snr[adata.data.snr< adata.snr_cutoff].mean() + 2*adata.data.snr[adata.data.snr< adata.snr_cutoff].std() 
+    # ndata.snr_cutoff = ndata.data.snr[ndata.data.snr< ndata.snr_cutoff].mean() + 2*ndata.data.snr[ndata.data.snr< ndata.snr_cutoff].std() 
     
     
-    logger.info('Total non-detection rate for {} is {} / {} = {:.2f}'.format(source, 
-                                                                             adata.data.loc[adata.data.snr < adata.snr_cutoff, 'snr'].count(),
+    logger.info('{} non-det rate: {:.0f}% . Total number = {}, Non-detections = {}'.format(source, 
+                                 adata.data.loc[adata.data.snr < adata.snr_cutoff, 'snr'].count() / adata.data.loc[:, 'snr'].count() * 100,
                                                                              adata.data.loc[:, 'snr'].count(),
-                                                                             adata.data.loc[adata.data.snr < adata.snr_cutoff, 'snr'].count()/adata.data.loc[:, 'snr'].count()
-                                                                             ))
-
-    
+                                 adata.data.loc[adata.data.snr < adata.snr_cutoff, 'snr'].count()) )
     
     if full is True:
         
@@ -800,7 +941,8 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
                                       hardcopy='nullalister_snr.png',
                                       uv_range=uv_range,
                                       bins=bins,
-                                      plot_counts=plot_counts)
+                                      plot_counts=plot_counts,
+                                      min_num_fringes=min_num_fringes)
         
         snr_ratio_adata = adata.radplot_low_snr_fraction(bin_width = bin_width, label=r'{}, bin width = {} M$\lambda$'.format(polar, bin_width), 
                                       title='{} {},  all days\nNumber of low SNR fringes (<{:.1f}) to all in the bin\nscaled by the non-horizon sources non-detections'.format(adata.data.source.unique(), years, '' if date_str is None else date_str, adata.snr_cutoff),
@@ -808,14 +950,16 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
                                       uv_range=uv_range,
                                       bins=bins,
                                       ndata=ndata,
-                                      plot_counts=plot_counts)
+                                      plot_counts=plot_counts,
+                                      min_num_fringes=min_num_fringes)
         
         snr_ratio_ndata = ndata.radplot_low_snr_fraction(bin_width = bin_width, label=r'{}, bin width = {} M$\lambda$'.format(polar, bin_width), 
                                       title='{} {},  all days\nNumber of low SNR fringes (<{:.1f}) to all in the bin'.format(ndata.data.source.unique(), years, '' if date_str is None else date_str, ndata.snr_cutoff),
                                       hardcopy='nullalister_snr.png',
                                       uv_range=uv_range,
                                       bins=bins,
-                                      plot_counts=plot_counts) 
+                                      plot_counts=plot_counts,
+                                      min_num_fringes=min_num_fringes) 
     else:
         snr_ratio_adata = adata.radplot_low_snr_fraction(bin_width = bin_width, label=r'{}, bin width = {} M$\lambda$'.format(polar, bin_width), 
                                       title='{} {},  {}, {}\nNumber of low SNR fringes (<{:.1f}) to all in the bin\nscaled by the non-horizon sources non-detections'.format(adata.data.source.unique(), years,'' if date_str is None else date_str, polar,  adata.snr_cutoff),
@@ -839,75 +983,222 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
 
 if __name__ == "__main__":
 
-    if True:
-        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='M87', polar=['RR','LL'])
-        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2018/eht2018_jw_rev3.alist', source='M87', polar=['RR','LL'])
-        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2021/eht2021_jw_rev0.alist', source='M87', polar=['RR','LL'])
+    computer_name = platform.node()
+    if computer_name == 'vlb098': # desktop 
+        base='/homes/mlisakov/data/correlation/'
+    else: # laptop
+        base = '/home/mikhail/data/correlation/'
+    
+
+    if False:
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='M87', polar=['RR','LL'])
+        # proceed_scale(alist_file='{}eht2018/rev3/e18c21-3-b2.3644.alist'.format(base), source='M87')
+        proceed_scale(alist_file='{}eht2018/eht2018_jw_rev3.alist'.format(base), source='M87', polar=['RR','LL'])
+        proceed_scale(alist_file='{}eht2021/eht2021_jw_rev0.alist'.format(base), source='M87', polar=['RR','LL'])
         
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', polar=['RR','LL'], 
-                      plot_counts=True, min_num_fringes=5)
-        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2018/eht2018_jw_rev3.alist', source='SGRA', polar=['RR','LL'])
-        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2021/eht2021_jw_rev0.alist', source='SGRA', polar=['RR','LL'])
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', polar=['RR','LL'])
+        proceed_scale(alist_file='{}eht2018/eht2018_jw_rev3.alist'.format(base), source='SGRA', polar=['RR','LL'])
+        proceed_scale(alist_file='{}eht2021/eht2021_jw_rev0.alist'.format(base), source='SGRA', polar=['RR','LL'])
  
     if False:  # compare different pol products on 2017 Apr 5 and 6.
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
                       timerange=[dt.datetime(2017,4,5,0,0,0),dt.datetime(2017,4,6,0,0,0)], polar=['RR', 'LL'])
        
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
                       timerange=[dt.datetime(2017,4,5,0,0,0),dt.datetime(2017,4,6,0,0,0)], polar=['RL', 'LR'])
        
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
                       timerange=[dt.datetime(2017,4,5,0,0,0),dt.datetime(2017,4,6,0,0,0)], polar=['RR','LL','RL', 'LR'])
     
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
                       timerange=[dt.datetime(2017,4,6,0,0,0),dt.datetime(2017,4,7,0,0,0)], polar=['RR', 'LL'])
        
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
                       timerange=[dt.datetime(2017,4,6,0,0,0),dt.datetime(2017,4,7,0,0,0)], polar=['RL', 'LR'])
        
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
                       timerange=[dt.datetime(2017,4,6,0,0,0),dt.datetime(2017,4,7,0,0,0)], polar=['RR','LL','RL', 'LR'])
 
 
     if False:
     #     # compare Apr 6th and other days in 2017. With scaling
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+        
+
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
                       timerange=[dt.datetime(2017,4,5,0,0,0),dt.datetime(2017,4,6,0,0,0)], polar=['RR', 'LL'],
-                      date_str = 'Apr 5, 2017', plot_counts=False)
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+                      date_str = 'Apr 5, 2017', 
+                      select_baselines=['AL', 'XL'],
+                      bin_width=200)
+        
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
                       timerange=[dt.datetime(2017,4,6,0,0,0),dt.datetime(2017,4,7,0,0,0)], polar=['RR', 'LL'],
-                      date_str = 'Apr 6, 2017', plot_counts=False)
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+                      date_str = 'Apr 6, 2017', 
+                      select_baselines=['AL', 'XL'],
+                      bin_width=200)
+        
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
                       timerange=[dt.datetime(2017,4,7,0,0,0),dt.datetime(2017,4,8,0,0,0)], polar=['RR', 'LL'],
-                      date_str = 'Apr 7, 2017')
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
+                      date_str = 'Apr 7, 2017', 
+                      select_baselines=['AL', 'XL'],
+                      bin_width=200)  
+          
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
                       timerange=[dt.datetime(2017,4,10,0,0,0),dt.datetime(2017,4,12,0,0,0)], polar=['RR', 'LL'],
-                      date_str = 'Apr 10-11, 2017')
-        # proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-        #               timerange=[dt.datetime(2017,4,11,0,0,0),dt.datetime(2017,4,12,0,0,0)], polar=['RR', 'LL'],
-        #               date_str = 'Apr 11, 2017')
-        proceed_scale(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-                      timerange=[dt.datetime(2017,4,5,0,0,0),dt.datetime(2017,4,12,0,0,0)], polar=['RR', 'LL'],
-                      date_str = 'Apr 5-11, 2017')
+                      date_str = 'Apr 10-11, 2017', 
+                      select_baselines=['AL', 'XL'],
+                      bin_width=200)          
+    if False:
+    #     # compare Apr 6th and other days in 2017. With scaling
     
+
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,4,22,31,0),dt.datetime(2017,4,5,17,7,0)], polar=['RL', 'LR'],
+                      date_str = 'Apr 5, 2017', 
+                      bin_width=200,
+                      select_baselines=['AL', 'AL'],
+                      min_num_fringes=0)
+        
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,6,0,46,0),dt.datetime(2017,4,6,16,14,0)], polar=['RL', 'LR'],
+                      date_str = 'Apr 6, 2017', 
+                      bin_width=200,
+                      select_baselines=['AL', 'AL'],
+                      min_num_fringes=0)
+        
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,7,4,1,0),dt.datetime(2017,4,7,20,42,0)], polar=['RL', 'LR'],
+                      date_str = 'Apr 7, 2017', 
+                      bin_width=200,
+                      select_baselines=['AL', 'AL'],
+                      min_num_fringes=0)
+          
+        proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,9,23,17,0),dt.datetime(2017,4,11,15,22,0)], polar=['RL', 'LR'],
+                      date_str = 'Apr 10-11, 2017', 
+                      bin_width=200,
+                      select_baselines=['AL', 'AL'],
+                      min_num_fringes=0)      
+        
+        
+    if False:        
+        
+     #     # compare Apr 6th and other days in 2017. Without scaling. Selected baselines
+        
+
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,4,22,31,0),dt.datetime(2017,4,5,17,7,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 5, 2017', 
+                      select_baselines=['AL', 'XL'],
+                      bin_width=200)
+        
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,6,0,46,0),dt.datetime(2017,4,6,16,14,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 6, 2017', 
+                      select_baselines=['AL', 'XL'],
+                      bin_width=200)
+        
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,7,4,1,0),dt.datetime(2017,4,7,20,42,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 7, 2017', 
+                      select_baselines=['AL', 'XL'],
+                      bin_width=200)  
+          
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,9,23,17,0),dt.datetime(2017,4,11,15,22,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 10-11, 2017', 
+                      select_baselines=['AL', 'XL'],
+                      bin_width=200)          
+        
+     
+    if False:
     
     #     # compare Apr 6th and other days in 2017. Without scaling
     
-        # proceed(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-        #               timerange=[dt.datetime(2017,4,5,0,0,0),dt.datetime(2017,4,6,0,0,0)], polar=['RR', 'LL'],
-        #               date_str = 'Apr 5, 2017', plot_counts=True)
-        # proceed(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-        #               timerange=[dt.datetime(2017,4,6,0,0,0),dt.datetime(2017,4,7,0,0,0)], polar=['RR', 'LL'],
-        #               date_str = 'Apr 6, 2017', plot_counts=True)
-        # proceed(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-        #               timerange=[dt.datetime(2017,4,7,0,0,0),dt.datetime(2017,4,8,0,0,0)], polar=['RR', 'LL'],
-        #               date_str = 'Apr 7, 2017')
-        # proceed(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-        #               timerange=[dt.datetime(2017,4,10,0,0,0),dt.datetime(2017,4,11,0,0,0)], polar=['RR', 'LL'],
-        #               date_str = 'Apr 10, 2017')
-        # proceed(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-        #               timerange=[dt.datetime(2017,4,11,0,0,0),dt.datetime(2017,4,12,0,0,0)], polar=['RR', 'LL'],
-        #               date_str = 'Apr 11, 2017')
-        # proceed(alist_file='/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist', source='SGRA', 
-        #               timerange=[dt.datetime(2017,4,5,0,0,0),dt.datetime(2017,4,12,0,0,0)], polar=['RR', 'LL'],
-        #               date_str = 'Apr 5-11, 2017', bin_width=250)
+
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,4,22,31,0),dt.datetime(2017,4,5,17,7,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 5, 2017', 
+                      bin_width=200)
+        
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,6,0,46,0),dt.datetime(2017,4,6,16,14,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 6, 2017', 
+                      bin_width=200)
+        
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,7,4,1,0),dt.datetime(2017,4,7,20,42,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 7, 2017', 
+                      bin_width=200)  
+          
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,9,23,17,0),dt.datetime(2017,4,11,15,22,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 10-11, 2017', 
+                      bin_width=200)          
+        
+                
+    if True:
+    #     # compare Apr 6th and other days in 2017. Without scaling
+    # compare sgra and non-hor sources non-det rates
+        
+
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,4,22,31,0),dt.datetime(2017,4,5,17,7,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 5, 2017', 
+                      bin_width=200,
+                      select_baselines=['XL', 'XL'],
+                      min_num_fringes=0)
+        
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,6,0,46,0),dt.datetime(2017,4,6,16,14,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 6, 2017', 
+                      bin_width=200,
+                      select_baselines=['XL', 'XL'],
+                      min_num_fringes=0)
+        
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,7,4,1,0),dt.datetime(2017,4,7,20,42,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 7, 2017', 
+                      bin_width=200,
+                      select_baselines=['XL', 'XL'],
+                      min_num_fringes=0)
+          
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
+                      timerange=[dt.datetime(2017,4,9,23,17,0),dt.datetime(2017,4,11,15,22,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 10-11, 2017', 
+                      bin_width=200,
+                      select_baselines=['XL', 'XL'],
+                      min_num_fringes=0)      
+
+    # non-horizon sources
+               
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), no_rings=True,
+                      timerange=[dt.datetime(2017,4,4,22,31,0),dt.datetime(2017,4,5,17,7,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 5, 2017', 
+                      bin_width=200,
+                      select_baselines=['XL', 'XL'],
+                      min_num_fringes=0)
+        
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), no_rings=True,
+                      timerange=[dt.datetime(2017,4,6,0,46,0),dt.datetime(2017,4,6,16,14,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 6, 2017', 
+                      bin_width=200,
+                      select_baselines=['XL', 'XL'],
+                      min_num_fringes=0)
+        
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), no_rings=True, 
+                      timerange=[dt.datetime(2017,4,7,4,1,0),dt.datetime(2017,4,7,20,42,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 7, 2017', 
+                      bin_width=200,
+                      select_baselines=['XL', 'XL'],
+                      min_num_fringes=0)
+          
+        proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), no_rings=True, 
+                      timerange=[dt.datetime(2017,4,9,23,17,0),dt.datetime(2017,4,11,15,22,0)], polar=['RR', 'LL'],
+                      date_str = 'Apr 10-11, 2017', 
+                      bin_width=200,
+                      select_baselines=['XL', 'XL'],
+                      min_num_fringes=0)          
+        
+        
+        
+        
