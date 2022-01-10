@@ -273,7 +273,7 @@ class alist():
         self.data = self.data.loc[(self.data.baseline.str[0].isin(telescopes)) | (self.data.baseline.str[1].isin(telescopes))]
         
         return self.data
-        
+
       
     def exclude_telescopes(self, telescopes=[None]):
         """Exclude specified telescopes. Telescope 
@@ -324,8 +324,8 @@ class alist():
         
         
         return self.data
-             
-         
+    
+    
     def exclude_baselines(self, baselines=[None]):
         """Exclude specified baselines. Telescope codes in the baselines
         are given according to those used in fourfit. Baseline are failproof 
@@ -431,8 +431,7 @@ class alist():
     
     
     def radplot_low_snr_fraction(self, bin_width=500, label=None, title=None, hardcopy=None,
-                                 uv_range=None, bins=None, ndata=None, plot_counts=False,
-                                 min_num_fringes=0):
+                                 uv_range=None, bins=None, ndata=None, plot_counts=False, min_num_fringes=0):
         """Plot ratio of number of low snr points to total number of point in each bin
         of a certain width in uv distance.
         
@@ -441,10 +440,10 @@ class alist():
                 a width of the uvdist bins in megalambdas
             plot_counts (Bool):
                 print a number of low_snr_fringes (low_snr_fringes_4scale) over 
-                total_fringes (total_fringes_4scale) 
+                total_fringes (total_fringes_4scale)
             min_num_fringes (int):
                 plot only bin with this minimum total number of fringes
-
+  
             
             
         """
@@ -510,12 +509,14 @@ class alist():
             ax2 = ax.twinx()
             # ax2.plot(self.data.uvdist, self.data.snr, 'o', label='{}'.format(self.data.source.unique()))
             if uv_range is not None:
-                ax2.plot(self.data.loc[self.data.uvdist > uv_range[0], 'uvdist'], 
-                         self.data.loc[self.data.uvdist > uv_range[0], 'snr'], 'o', 
-                         label='{}'.format(self.data.source.unique()))
+                snrplot = ax2.plot(self.data.loc[self.data.uvdist > uv_range[0], 'uvdist'], 
+                         self.data.loc[self.data.uvdist > uv_range[0], 'snr'], '.', 
+                         label='SNR')
             
             # bars = ax.bar(snr_ratio.loc[:, 'mid'], snr_ratio.loc[:, 'ratio'], width=bin_width, color='red', alpha=0.5, label=label)
-            bars = ax.bar(snr_ratio.loc[snr_ratio.snr_all >= min_num_fringes, 'mid'], snr_ratio.loc[snr_ratio.snr_all >= min_num_fringes, 'ratio'], width=bin_width, color='red', alpha=0.5, label=label) # introduced a min_num_fringes
+            barplot = ax.bar(snr_ratio.loc[snr_ratio.snr_all >= min_num_fringes, 'mid'], snr_ratio.loc[snr_ratio.snr_all >= min_num_fringes, 'ratio'], 
+                          width=bin_width, color='red', alpha=0.5, label='Non-det rate') # introduced a min_num_fringes
+
             # labels_x = np.array([bars.patches[i].xy[0] for i in range(0,len(bars.patches))]) + np.array([bars.patches[i].get_width() / 2  for i in range(0,len(bars.patches))])
             # labels_y = np.array([bars.patches[i].xy[1] for i in range(0,len(bars.patches))]) + np.array([bars.patches[i].get_height() for i in range(0,len(bars.patches))])
             # # labels_text = 
@@ -539,8 +540,13 @@ class alist():
         ax.set_xlabel(r'UV distance (M$\lambda$)')
         ax.set_ylabel('Ratio of low SNR fringes')
         ax2.set_ylabel('Fringe SNR')
+        
+        lines, labels = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        
         ax2.hlines(y=self.snr_cutoff, xmin=uv_range[0], xmax=uv_range[1])
-
+        
+        ax.legend(lines+lines2, labels+labels2, loc=0)
         if title is not None:
             fig.suptitle(title)
     
@@ -592,11 +598,12 @@ class alist():
             # fig.legend()
         else:
             # ax.plot(snr_ratio.loc[:, 'mid'], snr_ratio.loc[:, 'ratio'], '-*')
-            ax.bar(qe_ratio.loc[:, 'mid'], qe_ratio.loc[:, 'ratio'], width=bin_width, color='red', alpha=0.5)
+            ax.bar(qe_ratio.loc[:, 'mid'], qe_ratio.loc[:, 'ratio'], width=bin_width, color='red', alpha=0.5, label='Non-det rate')
             
         ax.set_xlabel(r'UV distance (M$\lambda$)')
         ax.set_ylabel('Ratio of low QE fringes')
         ax2.set_ylabel('Fringe Quality')
+        fig.legend()
         # ax2.hlines(y=self.snr_cutoff, xmin=uv_range[0], xmax=uv_range[1])
     
         if title is not None:
@@ -613,10 +620,14 @@ class alist():
     
 def proceed(alist_file=None, source=None, full=False, timerange=None, polar=['RR','LL'], date_str=None,
             plot_counts=False, bin_width=200, 
+            exclude_timerange=None,
             exclude_telescopes=None, exclude_baselines=None,
             select_telescopes=None, select_baselines=None,
             no_rings=False,
-            min_num_fringes=0):
+            min_num_fringes=0,
+            uv_range=None,
+            snr_cutoff_guess=7.0,
+            title=None):
     """ Proceed .
     No scaling is applied. 
     
@@ -630,6 +641,8 @@ def proceed(alist_file=None, source=None, full=False, timerange=None, polar=['RR
             also ratios for non-horizon sources. If False, plot only corrected ones
         timerange ([timestamp]):
             limit timerange to spesified
+        exclude_timerange ([timestamp]):
+            exclude specified timerange
         polar ([str]):
             array of polarization correlation products to be analyzed. Choose any 
             combination of RR, LL, RL, LR. Obvious choices are ['RR', 'LL'],
@@ -653,14 +666,22 @@ def proceed(alist_file=None, source=None, full=False, timerange=None, polar=['RR
             exclude ring sources (SgrA* and M87)
         min_num_fringes (int):
             plot only bin with this minimum total number of fringes
+        uv_range ([float, float]):
+            select desired range of uv distances
+        snr_cutoff_guess (float):
+            snr cutoff initial guess. The real cutoff is calculated using statistics 
+            of all snr below the snr_cutoff_guess
+        title (str):
+            title for the plot to replace the autogenerated one
 
     """
     
-    uv_range = [100,8200] # range of UV distances to consider. [100 cuts very sensitive baselines AA-AP
-    
+    if uv_range is None:
+        uv_range = [100,8200] # range of UV distances to consider. [100 cuts very sensitive baselines AA-AP
+
     
     if alist_file is None:
-        alist_file = '/homes/mlisakov/data/correlation/eht2017/eht2017_jw_rev5.alist'
+        alist_file = '/homes/mlisakov/data/correlation/eht2017/4.alist.v6'
     
 
     logger = create_logger(dest=['nullalister.log','stderr'])
@@ -681,7 +702,10 @@ def proceed(alist_file=None, source=None, full=False, timerange=None, polar=['RR
     
     if timerange is not None:
         adata.data = adata.data.loc[(adata.data.time >= timerange[0]) & (adata.data.time <= timerange[1])]
-
+    
+    if exclude_timerange is not None:
+        adata.data = adata.data.loc[(adata.data.time <= exclude_timerange[0]) | (adata.data.time >= exclude_timerange[1])]
+    
     if exclude_telescopes is not None:
         adata.exclude_telescopes(exclude_telescopes)
 
@@ -710,7 +734,7 @@ def proceed(alist_file=None, source=None, full=False, timerange=None, polar=['RR
 
     
     # calculate snr cutoff as mean + 2 std for all fringes with snr < 7.0
-    adata.snr_cutoff = adata.data.snr[adata.data.snr< 7.0].mean() + 2*adata.data.snr[adata.data.snr< 7.0].std() 
+    adata.snr_cutoff = adata.data.snr[adata.data.snr< snr_cutoff_guess].mean() + 2*adata.data.snr[adata.data.snr< snr_cutoff_guess].std() 
     
     
     logger.info('{} non-det rate: {:.0f}% . Total number = {}, Non-detections = {}'.format(source, 
@@ -719,24 +743,25 @@ def proceed(alist_file=None, source=None, full=False, timerange=None, polar=['RR
                              adata.data.loc[adata.data.snr < adata.snr_cutoff, 'snr'].count()) )
 
     
+    if title is None:
+        title='{}, {}, {}\nNumber of low SNR fringes (<{:.1f}) to all in the bin'.format(adata.data.source.unique(), '' if date_str is None else date_str, polar, adata.snr_cutoff)
     
     snr_ratio_data = adata.radplot_low_snr_fraction(bin_width = bin_width, label=r'{}, bin width = {} M$\lambda$'.format(polar, bin_width), 
-                                  title='{}, {}, {}\nNumber of low SNR fringes (<{:.1f}) to all in the bin'.format(adata.data.source.unique(), 
-                                                                                                                         '' if date_str is None else date_str, 
-                                                                                                                         polar, adata.snr_cutoff),
+                                  title=title,
                                   hardcopy='nullalister_snr.png',
                                   uv_range = uv_range,
                                   plot_counts=plot_counts,
                                   bins=bins,
                                   min_num_fringes=min_num_fringes)
     
+   
     
     logger.info('Finished run at {}'.format(dt.datetime.now()))
     
     
     
     
-    return
+    return adata
     
 def proceed_no_rings():
     """ Proceed with all 230 GHz data combined into one huge alist file. 
@@ -776,6 +801,7 @@ def proceed_no_rings():
     adata.snr_cutoff = adata.data.snr[adata.data.snr< 7.0].mean() + 2*adata.data.snr[adata.data.snr< 7.0].std() 
     
     
+    
     bin_width = 200 # in Mega lambda
     snr_ratio_data = adata.radplot_low_snr_fraction(bin_width = bin_width, label=r'RR and LL, bin width = {} M$\lambda$'.format(bin_width), 
                                   title='{} 2021,  all days\nNumber of low SNR fringes (<{:.1f}) to all in the bin'.format(adata.data.source.unique(), adata.snr_cutoff),
@@ -800,7 +826,8 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
                   plot_counts=False, bin_width=200, 
                   exclude_telescopes=None, exclude_baselines=None,
                   select_telescopes=None, select_baselines=None,
-                  min_num_fringes=0):
+                  min_num_fringes=0, uv_range=None,
+                  title=None):
     """ Proceed .
     This should be the most accurate method. The difference is that now the ratios 
     of non-detection to detections per bin for the horizon sources (SGRA or M87) are multiplied 
@@ -839,9 +866,10 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
             select only these specific baselines
         min_num_fringes (int):
             plot only bin with this minimum total number of fringes
+
     """
-    
-    uv_range = [100,8200] # range of UV distances to consider. [100 cuts very sensitive baselines AA-AP
+    if uv_range is None:
+        uv_range = [100,8200] # range of UV distances to consider. [100 cuts very sensitive baselines AA-AP
     qe_cutoff = 3  # fourfit fringe quality cutoff
 
     if source is None:
@@ -917,7 +945,7 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
     ndata.data = ndata.data.loc[ndata.data.pol.isin(polar)] # select polarizations 
     
     
-    
+
     
     # calculate snr cutoff as mean + 2 std for all fringes with snr < 7.0
     adata.snr_cutoff = adata.data.snr[adata.data.snr< 7.0].mean() + 2*adata.data.snr[adata.data.snr< 7.0].std() 
@@ -929,7 +957,7 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
     
     logger.info('{} non-det rate: {:.0f}% . Total number = {}, Non-detections = {}'.format(source, 
                                  adata.data.loc[adata.data.snr < adata.snr_cutoff, 'snr'].count() / adata.data.loc[:, 'snr'].count() * 100,
-                                                                             adata.data.loc[:, 'snr'].count(),
+                                 adata.data.loc[:, 'snr'].count(),
                                  adata.data.loc[adata.data.snr < adata.snr_cutoff, 'snr'].count()) )
     
     if full is True:
@@ -968,7 +996,7 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
                                       bins=bins,
                                       ndata=ndata,
                                       plot_counts=plot_counts,
-                                      min_num_fringes=min_num_fringes) 
+                                      min_num_fringes=min_num_fringes)
 
 
 
@@ -982,13 +1010,56 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
 
 
 if __name__ == "__main__":
-
+    
     computer_name = platform.node()
     if computer_name == 'vlb098': # desktop 
         base='/homes/mlisakov/data/correlation/'
     else: # laptop
         base = '/home/mikhail/data/correlation/'
-    
+
+    # for my talk at MCFE on Monday 10th    
+    if True:
+
+        # looks okay
+        # proceed(alist_file='{}eht2017/4.alist.v6'.format(base), source='SGRA', polar=['RR','LL'],
+        #         bin_width=250, uv_range=[0,9000], exclude_baselines=['SR', 'AX'],
+        #          title='SGRA 2017 RR+LL (step 4)')
+        
+        # # okay to show
+        # a=proceed(alist_file='{}eht2017/4.alist.v6'.format(base), source='SGRA', polar=['RR','LL'],
+        #         bin_width=250, uv_range=[0,9000], exclude_baselines=['SR', 'AX'],
+        #         timerange=[dt.datetime(2017,4,6,0,46,0),dt.datetime(2017,4,6,16,14,0)],
+        #         title='SGRA 2017 Apr 6 RR+LL (step4)')
+        
+        # # to match alma-smt-lmt figure
+        # a=proceed(alist_file='{}eht2017/4.alist.v6'.format(base), source='SGRA', polar=['RR','LL'],
+        #         bin_width=250, uv_range=[0,9000], exclude_baselines=['SR', 'AX'],
+        #         select_telescopes=['L'],
+        #         timerange=[dt.datetime(2017,4,6,0,46,0),dt.datetime(2017,4,6,16,14,0)],
+        #         title='SGRA 2017 Apr 6 RR+LL (step4)')
+        
+        # # okay to show
+        # a=proceed(alist_file='{}eht2017/4.alist.v6'.format(base), source='SGRA', polar=['RR','LL'],
+        #         bin_width=250, uv_range=[0,9000], exclude_baselines=['SR', 'AX'],
+        #         exclude_timerange=[dt.datetime(2017,4,6,0,46,0),dt.datetime(2017,4,6,16,14,0)],
+        #         title='SGRA 2017 Apr 5,7,10,11 RR+LL (step4)')
+                
+        
+        
+        
+        # works well and gives a nice image
+        # proceed(alist_file='{}eht2017/4.alist.v6'.format(base), source='M87', polar=['RR','LL'],
+        #         bin_width=250, 
+        #         uv_range=[0,9000],
+        #         exclude_baselines=['SR', 'AX'],
+        #         title='M87 2017 RR+LL (step 4)')
+
+        
+        proceed_scale(alist_file='{}eht2018/eht2018_jw_rev3.alist'.format(base), source='M87', polar=['RR','LL'],
+                bin_width=250, 
+                uv_range=[0,9000],
+                exclude_baselines=['SR', 'AX'],
+                title='M87 2018 RR+LL (rev 3)')
 
     if False:
         proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='M87', polar=['RR','LL'])
@@ -1049,7 +1120,7 @@ if __name__ == "__main__":
                       bin_width=200)          
     if False:
     #     # compare Apr 6th and other days in 2017. With scaling
-    
+        
 
         proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
                       timerange=[dt.datetime(2017,4,4,22,31,0),dt.datetime(2017,4,5,17,7,0)], polar=['RL', 'LR'],
@@ -1111,9 +1182,9 @@ if __name__ == "__main__":
         
      
     if False:
-    
-    #     # compare Apr 6th and other days in 2017. Without scaling
-    
+        
+     #     # compare Apr 6th and other days in 2017. Without scaling
+        
 
         proceed(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='SGRA', 
                       timerange=[dt.datetime(2017,4,4,22,31,0),dt.datetime(2017,4,5,17,7,0)], polar=['RR', 'LL'],
@@ -1136,7 +1207,7 @@ if __name__ == "__main__":
                       bin_width=200)          
         
                 
-    if True:
+    if False:
     #     # compare Apr 6th and other days in 2017. Without scaling
     # compare sgra and non-hor sources non-det rates
         
