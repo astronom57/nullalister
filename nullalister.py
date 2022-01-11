@@ -1012,13 +1012,31 @@ def proceed_scale(alist_file=None, source=None, full=False, timerange=None, pola
 if __name__ == "__main__":
     
     computer_name = platform.node()
-    if computer_name == 'vlb098': # desktop 
+    if computer_name == 'vlb140': # desktop 
         base='/homes/mlisakov/data/correlation/'
     else: # laptop
         base = '/home/mikhail/data/correlation/'
 
     # for my talk at MCFE on Monday 10th    
     if True:
+        
+        # looks okay
+        proceed(alist_file='{}eht2017/5.alist.v6'.format(base), source='SGRA', polar=['RR','LL'],
+                bin_width=250, uv_range=[0,9000], exclude_baselines=['SR', 'AX'],
+                  title='SGRA 2017 RR+LL (step 5)',
+                  snr_cutoff_guess=1)
+        
+        
+        a=proceed(alist_file='{}eht2017/4.alist.v6'.format(base), source='SGRA', polar=['RR','LL'],
+           bin_width=250, uv_range=[0,9000], exclude_baselines=['SR', 'AX'],
+           timerange=[dt.datetime(2017,4,6,0,46,0),dt.datetime(2017,4,7,20,42,0)],
+           title='SGRA 2017 Apr 6+7 RR+LL (step4)')
+
+        a=proceed(alist_file='{}eht2017/4.alist.v6'.format(base), source='SGRA', polar=['RR','LL'],
+           bin_width=250, uv_range=[0,9000], exclude_baselines=['SR', 'AX'],
+           exclude_timerange=[dt.datetime(2017,4,6,0,46,0),dt.datetime(2017,4,7,20,42,0)],
+           title='SGRA 2017 Apr 5,10,11 RR+LL (step4)')
+
 
         # looks okay
         # proceed(alist_file='{}eht2017/4.alist.v6'.format(base), source='SGRA', polar=['RR','LL'],
@@ -1030,7 +1048,7 @@ if __name__ == "__main__":
         #         bin_width=250, uv_range=[0,9000], exclude_baselines=['SR', 'AX'],
         #         timerange=[dt.datetime(2017,4,6,0,46,0),dt.datetime(2017,4,6,16,14,0)],
         #         title='SGRA 2017 Apr 6 RR+LL (step4)')
-        
+   
         # # to match alma-smt-lmt figure
         # a=proceed(alist_file='{}eht2017/4.alist.v6'.format(base), source='SGRA', polar=['RR','LL'],
         #         bin_width=250, uv_range=[0,9000], exclude_baselines=['SR', 'AX'],
@@ -1054,12 +1072,20 @@ if __name__ == "__main__":
         #         exclude_baselines=['SR', 'AX'],
         #         title='M87 2017 RR+LL (step 4)')
 
-        
-        proceed_scale(alist_file='{}eht2018/eht2018_jw_rev3.alist'.format(base), source='M87', polar=['RR','LL'],
-                bin_width=250, 
-                uv_range=[0,9000],
-                exclude_baselines=['SR', 'AX'],
-                title='M87 2018 RR+LL (rev 3)')
+        # after GFF, for illustrative purposes
+        # proceed(alist_file='{}eht2017/5.alist.v6'.format(base), source='M87', polar=['RR','LL'],
+        #         bin_width=250, 
+        #         uv_range=[0,9000],
+        #         exclude_baselines=['SR', 'AX'],
+        #         title='M87 2017 RR+LL (step 5)',
+        #         snr_cutoff_guess=1)
+                
+                
+        # proceed_scale(alist_file='{}eht2018/eht2018_jw_rev3.alist'.format(base), source='M87', polar=['RR','LL'],
+        #         bin_width=250, 
+        #         uv_range=[0,9000],
+        #         exclude_baselines=['SR', 'AX'],
+        #         title='M87 2018 RR+LL (rev 3)')
 
     if False:
         proceed_scale(alist_file='{}eht2017/eht2017_jw_rev5.alist'.format(base), source='M87', polar=['RR','LL'])
